@@ -1,0 +1,46 @@
+{
+  "figmaData": {
+    "data": {
+      "document": {
+        "1:1": {
+          "document": {
+            "id": "1:1",
+            "type": "RECTANGLE",
+            "name": "Button",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 120,
+              "height": 40
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.2,
+                  "g": 0.6,
+                  "b": 1,
+                  "a": 1
+                },
+                "blendMode": "NORMAL"
+              }
+            ],
+            "strokes": [],
+            "cornerRadius": 8,
+            "visible": true,
+            "strokeWeight": 1,
+            "strokeAlign": "INSIDE",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED"
+          }
+        }
+      }
+    }
+  },
+  "settings": {
+    "framework": "Tailwind",
+    "jsx": true,
+    "useColorVariables": false,
+    "embedVectors": true
+  }
+}
