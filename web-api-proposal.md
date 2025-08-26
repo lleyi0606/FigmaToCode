@@ -337,6 +337,138 @@ The API accepts **raw Figma JSON** (from REST API or JSON_REST_V1 export) and pr
 - **Handle plugin-only features** - Mock `getStyledTextSegments`, variable lookups, etc.
 - **Reuse existing generators** - All framework conversion logic works unchanged
 
+## Available Settings
+
+### Core Settings
+
+| Setting | Type | Required | Description |
+|---------|------|----------|-------------|
+| `framework` | string | ✅ **Required** | `"Tailwind"`, `"HTML"`, `"Flutter"`, `"SwiftUI"`, `"Compose"` |
+| `showLayerNames` | boolean | Optional | Adds `data-layer="Node Name"` attributes for debugging |
+| `useColorVariables` | boolean | Optional | Process Figma color variables and design tokens |
+| `embedVectors` | boolean | Optional | Convert vector icons to inline SVG |
+| `embedImages` | boolean | Optional | Embed images (requires `figmaOptions`) |
+
+### Framework-Specific Settings
+
+#### Tailwind
+```json
+{
+  "framework": "Tailwind",
+  "tailwindGenerationMode": "jsx", // "jsx" | "html" 
+  "roundTailwindValues": true,      // Round pixel values to nearest Tailwind class
+  "roundTailwindColors": false,     // Round colors to nearest Tailwind color
+  "customTailwindPrefix": "",       // Custom prefix for classes
+  "useTailwind4": false,           // Use Tailwind v4 syntax
+  "showLayerNames": true           // Add data-layer attributes
+}
+```
+
+#### HTML/React
+```json
+{
+  "framework": "HTML",
+  "htmlGenerationMode": "jsx",      // "html" | "jsx" | "styled-components" | "svelte"
+  "inlineStyle": false,            // Use inline styles vs CSS classes
+  "showLayerNames": true,          // Add data-layer attributes
+  "embedImages": true,             // Embed images as base64 or URLs
+  "embedVectors": true             // Convert vectors to SVG
+}
+```
+
+#### Flutter
+```json
+{
+  "framework": "Flutter", 
+  "flutterGenerationMode": "snippet" // "snippet" | "stateless" | "fullApp"
+}
+```
+
+#### SwiftUI
+```json
+{
+  "framework": "SwiftUI",
+  "swiftUIGenerationMode": "struct" // "snippet" | "struct" | "preview"
+}
+```
+
+#### Compose
+```json
+{
+  "framework": "Compose",
+  "composeGenerationMode": "composable" // "snippet" | "composable" | "screen"
+}
+```
+
+### React Code Generation Options
+
+| Mode | Settings | Output Example |
+|------|----------|----------------|
+| **Tailwind JSX** | `{"framework": "Tailwind", "tailwindGenerationMode": "jsx"}` | `<div className="w-[120px] h-10 bg-blue-500" />` |
+| **HTML JSX** | `{"framework": "HTML", "htmlGenerationMode": "jsx"}` | `<div style={{width: 120, height: 40, background: '#3399FF'}} />` |
+| **Styled Components** | `{"framework": "HTML", "htmlGenerationMode": "styled-components"}` | Complete React component with styled-components |
+| **Svelte** | `{"framework": "HTML", "htmlGenerationMode": "svelte"}` | Svelte component syntax |
+
+### Image Processing Settings
+
+To use **real Figma images** instead of placeholders:
+
+```json
+{
+  "figmaData": { ... },
+  "settings": {
+    "framework": "Tailwind",
+    "embedImages": true
+  },
+  "figmaOptions": {
+    "fileKey": "ABC123XYZ789",      // From figma.com/file/ABC123XYZ789/...
+    "figmaToken": "figd_...",       // Your Figma personal access token
+    "embedAsBase64": true           // true = base64 embed, false = Figma CDN URLs
+  }
+}
+```
+
+| Image Mode | figmaOptions | embedAsBase64 | Result |
+|------------|--------------|---------------|--------|
+| **Placeholder** | None | N/A | `https://placehold.co/WxH` |
+| **Figma CDN** | Required | `false` | `https://s3-alpha.figma.com/img/...` |
+| **Base64 Embed** | Required | `true` | `data:image/png;base64,iVBORw0...` |
+
+### Complete Example
+
+```json
+{
+  "figmaData": {
+    "data": {
+      "document": {
+        "58:8": {
+          "document": {
+            "id": "58:8",
+            "name": "Website Hero",
+            "type": "FRAME",
+            "children": [...],
+            "fills": [...]
+          }
+        }
+      }
+    }
+  },
+  "settings": {
+    "framework": "Tailwind",
+    "tailwindGenerationMode": "jsx",
+    "showLayerNames": true,
+    "useColorVariables": false,
+    "embedVectors": true,
+    "embedImages": true
+  },
+  "figmaOptions": {
+    "fileKey": "YOUR_FILE_KEY",
+    "figmaToken": "YOUR_FIGMA_TOKEN",
+    "embedAsBase64": false
+  }
+}
+```
+
 ## Challenges to Address
 
 - **Plugin-only features** - Some functionality may need workarounds or approximations

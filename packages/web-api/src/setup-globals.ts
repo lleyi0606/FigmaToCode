@@ -78,12 +78,43 @@ global.figma = {
   
   _clearNodeCache: () => {
     nodeCache.clear();
-  }
+    console.log('🗑️ Cleared node cache');
+  },
+  
+  _getNodeCacheSize: () => nodeCache.size
 };
 
 // Type augmentation for global figma
 declare global {
-  var figma: typeof global.figma;
+  var figma: {
+    mixed: symbol;
+    getNodeByIdAsync: (id: string) => Promise<any>;
+    variables: {
+      getVariableByIdAsync: (id: string) => Promise<any>;
+      getVariableById: (id: string) => any;
+    };
+    ui: {
+      postMessage: () => void;
+      onmessage: any;
+    };
+    getSelectionColors: () => any[];
+    clientStorage: {
+      getAsync: () => Promise<any>;
+      setAsync: () => Promise<void>;
+    };
+    currentPage: {
+      selection: any[];
+    };
+    listAvailableFontsAsync: () => Promise<any[]>;
+    mode: 'DESIGN';
+    viewport: {
+      center: { x: number; y: number };
+      zoom: number;
+    };
+    _populateNodeCache: (nodes: any[]) => void;
+    _clearNodeCache: () => void;
+    _getNodeCacheSize: () => number;
+  };
 }
 
 console.log('🔧 Global figma mock setup complete');

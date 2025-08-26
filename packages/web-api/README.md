@@ -207,6 +207,42 @@ const jsonExport = await Promise.all(
 ### From Your Example
 Your JSON is already in the correct format! Just use it as `figmaData`.
 
+## Real Image Support
+
+To use **real Figma images** instead of placeholders, add `figmaOptions` to your request:
+
+```json
+{
+  "figmaData": { ... },
+  "settings": { 
+    "framework": "Tailwind",
+    "embedImages": true 
+  },
+  "figmaOptions": {
+    "fileKey": "ABC123XYZ789", // From figma.com/file/ABC123XYZ789/...
+    "figmaToken": "figd_...", // Your Figma personal access token
+    "embedAsBase64": true // true = embed base64, false = use Figma CDN URLs
+  }
+}
+```
+
+### **Image Processing Options**
+
+| Setting | Result |
+|---------|--------|
+| No `figmaOptions` | 🔗 Placeholder: `https://placehold.co/WxH` |
+| `embedAsBase64: false` | 🌐 Figma CDN: `https://s3-alpha.figma.com/img/...` |
+| `embedAsBase64: true` | 📁 Base64: `data:image/png;base64,iVBORw0...` |
+
+### **Getting Your Figma Token**
+1. Go to [Figma Account Settings](https://www.figma.com/settings)
+2. Create a **Personal Access Token**
+3. Use token format: `figd_...`
+
+### **Finding Your File Key**
+From Figma URL: `https://www.figma.com/file/ABC123XYZ789/My-Design`
+- File key = `ABC123XYZ789`
+
 ## Response Format
 
 ```json

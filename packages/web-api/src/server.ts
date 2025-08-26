@@ -20,13 +20,60 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'FigmaToCode Web API is running' });
 });
 
+// Cache management endpoints
+app.post('/api/cache/clear', (req, res) => {
+  try {
+    const cacheSize = figma._getNodeCacheSize ? figma._getNodeCacheSize() : 'unknown';
+    console.log(`🗑️ Clearing node cache (had ${cacheSize} nodes)`);
+    
+    figma._clearNodeCache();
+    
+    res.json({
+      success: true,
+      message: 'Node cache cleared successfully',
+      previousSize: cacheSize
+    });
+  } catch (error) {
+    console.error('❌ Failed to clear node cache:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to clear cache'
+    });
+  }
+});
+
+app.get('/api/cache/status', (req, res) => {
+  try {
+    const cacheSize = figma._getNodeCacheSize ? figma._getNodeCacheSize() : 'unknown';
+    
+    res.json({
+      success: true,
+      cacheSize,
+      message: `Node cache contains ${cacheSize} entries`
+    });
+  } catch (error) {
+    console.error('❌ Failed to get cache status:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get cache status'
+    });
+  }
+});
+
 // Main conversion endpoint
 app.post('/api/convert', async (req, res) => {
   try {
+    // Prevent caching
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    
     console.log('🚀 Starting conversion request');
     const startTime = Date.now();
     
-    const { figmaData, settings } = req.body;
+    const { figmaData, settings, figmaOptions } = req.body;
     
     // Validate input
     if (!figmaData) {
@@ -53,6 +100,16 @@ app.post('/api/convert', async (req, res) => {
         error: 'No valid nodes found in figmaData'
       });
     }
+    
+    // Resolve image fills if Figma credentials provided (optional)
+    // if (figmaOptions?.fileKey && figmaOptions?.figmaToken) {
+    //   const { resolveImageFills } = await import('./figma-images');
+    //   await resolveImageFills(rawNodes, {
+    //     fileKey: figmaOptions.fileKey,
+    //     figmaToken: figmaOptions.figmaToken,
+    //     embedAsBase64: figmaOptions.embedAsBase64 || false
+    //   });
+    // }
     
     // Process raw Figma JSON into AltNodes
     const processingStart = Date.now();
@@ -85,19 +142,20 @@ app.post('/api/convert', async (req, res) => {
       }
     }
     
-    // Get color/gradient data (optional)
+    // Get color/gradient data (optional, but often fails in web API context)
     let colors: any[] = [];
     let gradients: any[] = [];
     
-    if (settings.includeColorData !== false) {
-      try {
-        colors = await retrieveGenericSolidUIColors(settings.framework);
-        gradients = await retrieveGenericLinearGradients(settings.framework);
-      } catch (colorError) {
-        console.warn('⚠️ Color/gradient data retrieval failed:', colorError);
-        // Continue without color data
-      }
-    }
+    // Disable color data retrieval for now as it requires plugin context
+    // if (settings.includeColorData !== false) {
+    //   try {
+    //     colors = await retrieveGenericSolidUIColors(settings.framework);
+    //     gradients = await retrieveGenericLinearGradients(settings.framework);
+    //   } catch (colorError) {
+    //     console.warn('⚠️ Color/gradient data retrieval failed:', colorError);
+    //     // Continue without color data
+    //   }
+    // }
     
     const totalTime = Date.now() - startTime;
     console.log(`✅ Request completed in ${totalTime}ms`);
@@ -156,7 +214,9 @@ app.use('*', (req, res) => {
     error: 'Endpoint not found',
     availableEndpoints: {
       'GET /health': 'Health check',
-      'POST /api/convert': 'Convert Figma JSON to code'
+      'POST /api/convert': 'Convert Figma JSON to code',
+      'GET /api/cache/status': 'Check node cache status',
+      'POST /api/cache/clear': 'Clear node cache'
     }
   });
 });

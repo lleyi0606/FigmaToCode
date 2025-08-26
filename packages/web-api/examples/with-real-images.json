@@ -1,0 +1,33 @@
+{
+  "figmaData": {
+    "data": {
+      "document": {
+        "1:1": {
+          "document": {
+            "id": "1:1", 
+            "type": "RECTANGLE",
+            "name": "Hero Image",
+            "absoluteBoundingBox": {"x": 0, "y": 0, "width": 400, "height": 300},
+            "fills": [
+              {
+                "type": "IMAGE",
+                "imageRef": "55d502ac98f02942444372b1035cd66e763c6b83",
+                "scaleMode": "FILL"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "settings": {
+    "framework": "HTML",
+    "htmlGenerationMode": "jsx",
+    "embedImages": true
+  },
+  "figmaOptions": {
+    "fileKey": "YOUR_FILE_KEY_HERE",
+    "figmaToken": "YOUR_FIGMA_TOKEN_HERE", 
+    "embedAsBase64": false
+  }
+}

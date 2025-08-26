@@ -57,8 +57,10 @@ export const processRawFigmaNodes = async (rawNodes: any[], settings: any) => {
   // Track names for deduplication
   const nameCounters = new Map<string, number>();
   
-  for (const rawNode of rawNodes) {
+  for (let i = 0; i < rawNodes.length; i++) {
+    const rawNode = rawNodes[i];
     try {
+      console.log(`🔄 Processing node ${i + 1}/${rawNodes.length}: ${rawNode.id || 'unknown'} (${rawNode.type})`);
       const altNode = await processRawNode(rawNode, null, settings, nameCounters);
       if (altNode) {
         if (Array.isArray(altNode)) {
@@ -67,8 +69,11 @@ export const processRawFigmaNodes = async (rawNodes: any[], settings: any) => {
           processedNodes.push(altNode);
         }
       }
+      console.log(`✅ Successfully processed node: ${rawNode.id || 'unknown'}`);
     } catch (error) {
       console.error(`❌ Failed to process node ${rawNode.id || 'unknown'}:`, error);
+      console.error('Error stack:', error.stack);
+      console.error('Raw node data:', JSON.stringify(rawNode, null, 2));
       // Continue processing other nodes
     }
   }
@@ -99,6 +104,17 @@ const processRawNode = async (
     ...rawNode,
     parent
   };
+  
+  // 1.5. Ensure required arrays exist (prevent undefined.length errors)
+  if (!altNode.fills || !Array.isArray(altNode.fills)) {
+    altNode.fills = [];
+  }
+  if (!altNode.strokes || !Array.isArray(altNode.strokes)) {
+    altNode.strokes = [];
+  }
+  if (!altNode.effects || !Array.isArray(altNode.effects)) {
+    altNode.effects = [];
+  }
   
   // 2. Generate unique name
   const baseName = rawNode.name?.trim() || 'unnamed';
@@ -177,6 +193,23 @@ const processRawNode = async (
     await processColorVariables(altNode, settings);
   }
   
+  // 7.5. Process image fills
+  if (rawNode.fills && Array.isArray(rawNode.fills)) {
+    rawNode.fills.forEach((fill: any) => {
+      if (fill && fill.type === 'IMAGE') {
+        // If we have a resolved image URL or base64, use it
+        if (fill.base64Url) {
+          fill.resolvedImageUrl = fill.base64Url;
+        } else if (fill.imageUrl) {
+          fill.resolvedImageUrl = fill.imageUrl;
+        } else {
+          // Fallback to placeholder
+          fill.resolvedImageUrl = `https://placehold.co/${Math.round(altNode.width || 100)}x${Math.round(altNode.height || 100)}`;
+        }
+      }
+    });
+  }
+  
   // 8. Handle various node properties
   
   // Stroke properties
@@ -230,14 +263,58 @@ const processRawNode = async (
   }
   
   // 9. Icon detection (for SVG embedding)
-  altNode.canBeFlattened = settings.embedVectors && isLikelyIcon(altNode);
+  // Enhanced logic: Allow vector children to be flattened even if parent could be flattened,
+  // as long as the vector has actual geometry data
+  const isIcon = isLikelyIcon(altNode);
+  const hasVectorGeometry = rawNode.type === 'VECTOR' && rawNode.fillGeometry && rawNode.fillGeometry.length > 0;
+  
+  if (settings.embedVectors) {
+    if (hasVectorGeometry) {
+      // Always flatten vectors with geometry, regardless of parent
+      altNode.canBeFlattened = true;
+      console.log(`✅ Marked Vector ${altNode.name} as flattenable (has geometry)`);
+    } else if (!parent?.canBeFlattened && isIcon) {
+      // Use original logic for non-vectors
+      altNode.canBeFlattened = true;
+      console.log(`✅ Marked ${altNode.name} as flattenable (icon detection)`);
+    } else {
+      altNode.canBeFlattened = false;
+      
+      if (rawNode.type === 'VECTOR') {
+        console.log(`🚫 Vector ${altNode.name} blocked - no geometry data`);
+      }
+    }
+  } else {
+    altNode.canBeFlattened = false;
+  }
+  
+  // 9.5. Generate SVG from fillGeometry if available
+  if (altNode.canBeFlattened && settings.embedVectors) {
+    // Check if this node has geometry directly
+    if (rawNode.fillGeometry && rawNode.fillGeometry.length > 0) {
+      altNode.svg = generateSVGFromGeometry(rawNode, altNode);
+      console.log(`🎨 Generated SVG for ${altNode.name} from own geometry`);
+    } else {
+      // Check if we should collect geometry from Vector children (like plugin does)
+      const vectorChildren = collectVectorGeometry(rawNode);
+      if (vectorChildren.length > 0) {
+        altNode.svg = generateSVGFromChildren(vectorChildren, altNode);
+        console.log(`🎨 Generated SVG for ${altNode.name} from ${vectorChildren.length} vector children`);
+        
+        // Mark vector children for removal since they're now flattened into parent
+        vectorChildren.forEach(child => {
+          child._flattenedIntoParent = true;
+        });
+      }
+    }
+  }
   
   // 10. Process children recursively
   if (rawNode.children && Array.isArray(rawNode.children) && rawNode.children.length > 0) {
     const processedChildren = [];
     
     for (const child of rawNode.children) {
-      if (child.visible !== false) {
+      if (child.visible !== false && !child._flattenedIntoParent) {
         try {
           const processedChild = await processRawNode(child, altNode, settings, nameCounters);
           if (processedChild !== null) {
@@ -249,6 +326,7 @@ const processRawNode = async (
           }
         } catch (error) {
           console.error(`❌ Failed to process child node ${child.id || 'unknown'}:`, error);
+          console.error('Error details:', (error as Error).stack);
           // Continue processing other children
         }
       }
@@ -335,31 +413,35 @@ const createTextSegments = (textNode: any) => {
 
 // Helper: Process color variables (simplified)
 const processColorVariables = async (node: any, settings: any) => {
-  // Process fills
-  if (node.fills && Array.isArray(node.fills)) {
-    for (const fill of node.fills) {
-      if (fill.type === 'SOLID' && fill.boundVariables?.color) {
-        try {
-          // Mock variable name resolution
-          fill.variableColorName = `var-${fill.boundVariables.color.id.slice(-6)}`;
-        } catch (error) {
-          console.warn(`⚠️ Failed to resolve color variable ${fill.boundVariables.color.id}`);
+  try {
+    // Process fills
+    if (node.fills && Array.isArray(node.fills)) {
+      for (const fill of node.fills) {
+        if (fill && fill.type === 'SOLID' && fill.boundVariables?.color) {
+          try {
+            // Mock variable name resolution
+            fill.variableColorName = `var-${fill.boundVariables.color.id.slice(-6)}`;
+          } catch (error) {
+            console.warn(`⚠️ Failed to resolve color variable ${fill.boundVariables.color.id}`);
+          }
         }
       }
     }
-  }
-  
-  // Process strokes
-  if (node.strokes && Array.isArray(node.strokes)) {
-    for (const stroke of node.strokes) {
-      if (stroke.type === 'SOLID' && stroke.boundVariables?.color) {
-        try {
-          stroke.variableColorName = `var-${stroke.boundVariables.color.id.slice(-6)}`;
-        } catch (error) {
-          console.warn(`⚠️ Failed to resolve stroke color variable ${stroke.boundVariables.color.id}`);
+    
+    // Process strokes
+    if (node.strokes && Array.isArray(node.strokes)) {
+      for (const stroke of node.strokes) {
+        if (stroke && stroke.type === 'SOLID' && stroke.boundVariables?.color) {
+          try {
+            stroke.variableColorName = `var-${stroke.boundVariables.color.id.slice(-6)}`;
+          } catch (error) {
+            console.warn(`⚠️ Failed to resolve stroke color variable ${stroke.boundVariables.color.id}`);
+          }
         }
       }
     }
+  } catch (error) {
+    console.error(`❌ Error in processColorVariables for node ${node.id}:`, error);
   }
 };
 
@@ -380,4 +462,98 @@ const isLikelyIcon = (node: any): boolean => {
   }
   
   return couldBeIcon;
+};
+
+// Helper: Collect vector geometry from children (like plugin does)
+const collectVectorGeometry = (node: any): any[] => {
+  if (!node.children || !Array.isArray(node.children)) {
+    return [];
+  }
+  
+  const vectors = [];
+  for (const child of node.children) {
+    if (child.type === 'VECTOR' && child.fillGeometry && child.fillGeometry.length > 0) {
+      vectors.push(child);
+    }
+  }
+  
+  return vectors;
+};
+
+// Helper: Generate SVG from multiple vector children
+const generateSVGFromChildren = (vectorChildren: any[], parentNode: any): string => {
+  const width = parentNode.width || 24;
+  const height = parentNode.height || 24;
+  
+  // Collect all paths from all vector children
+  const allPaths: string[] = [];
+  
+  for (const vector of vectorChildren) {
+    if (vector.fillGeometry) {
+      // Get fill color for this vector
+      let fillColor = '#000000';
+      if (vector.fills && vector.fills.length > 0) {
+        const solidFill = vector.fills.find((fill: any) => fill.type === 'SOLID' && fill.visible !== false);
+        if (solidFill && solidFill.color) {
+          const r = Math.round(solidFill.color.r * 255);
+          const g = Math.round(solidFill.color.g * 255);
+          const b = Math.round(solidFill.color.b * 255);
+          fillColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        }
+      }
+      
+      // Add all geometry paths from this vector
+      vector.fillGeometry.forEach((geometry: any) => {
+        const fillRule = geometry.windingRule === 'EVENODD' ? 'evenodd' : 'nonzero';
+        allPaths.push(`<path d="${geometry.path}" fill="${fillColor}" fill-rule="${fillRule}"/>`);
+      });
+    }
+  }
+  
+  if (allPaths.length === 0) {
+    return '';
+  }
+  
+  // Generate combined SVG
+  const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
+  ${allPaths.join('\n  ')}
+</svg>`;
+  
+  return svg;
+};
+
+// Helper: Generate SVG from fillGeometry path data
+const generateSVGFromGeometry = (rawNode: any, altNode: any): string => {
+  if (!rawNode.fillGeometry || !Array.isArray(rawNode.fillGeometry)) {
+    return '';
+  }
+  
+  const width = altNode.width || 24;
+  const height = altNode.height || 24;
+  
+  // Get fill color for the SVG
+  let fillColor = '#000000'; // Default black
+  
+  if (rawNode.fills && rawNode.fills.length > 0) {
+    const solidFill = rawNode.fills.find((fill: any) => fill.type === 'SOLID' && fill.visible !== false);
+    if (solidFill && solidFill.color) {
+      const r = Math.round(solidFill.color.r * 255);
+      const g = Math.round(solidFill.color.g * 255);
+      const b = Math.round(solidFill.color.b * 255);
+      fillColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    }
+  }
+  
+  // Generate path elements from geometry
+  const paths = rawNode.fillGeometry.map((geometry: any) => {
+    const fillRule = geometry.windingRule === 'EVENODD' ? 'evenodd' : 'nonzero';
+    return `<path d="${geometry.path}" fill="${fillColor}" fill-rule="${fillRule}"/>`;
+  }).join('\n  ');
+  
+  // Generate complete SVG
+  const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
+  ${paths}
+</svg>`;
+  
+  return svg;
 };
